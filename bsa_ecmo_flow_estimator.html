@@ -1,0 +1,235 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BSA & ECMO Flow Estimator</title>
+  <style>
+    :root { --fg:#111; --bg:#f7f7f8; --card:#fff; --muted:#666; --accent:#4f46e5; --border:#e5e7eb; }
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    body{margin:0;background:var(--bg);color:var(--fg);}
+    .wrap{max-width:820px;margin:40px auto;padding:24px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px; padding:24px; box-shadow:0 10px 25px rgba(0,0,0,.05);}
+    h1{margin:0 0 8px 0;font-size:28px}
+    p.lead{margin:0 0 20px 0;color:var(--muted)}
+    label{display:block;margin:14px 0 6px;font-weight:600}
+    input, select{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:16px;outline:none}
+    input:focus, select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.15)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .btn{display:inline-block;margin-top:14px;padding:12px 16px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer}
+    .btn.secondary{background:#e2e8f0;color:#111}
+    .result{margin-top:20px;padding:16px;border:1px dashed var(--border);border-radius:12px;background:#fafafa}
+    .muted{color:var(--muted);font-size:14px}
+    .formula{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;background:#f1f5f9;padding:10px;border-radius:8px;display:inline-block}
+    footer{margin-top:20px;color:var(--muted);font-size:12px;text-align:center}
+    .cols-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .k{font-size:13px;color:#374151}
+    .v{font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>BSA & ECMO Flow Estimator</h1>
+      <p class="lead">Enter height and weight → compute BSA (Mosteller & Du Bois) → select patient type and ECMO type to get <strong>Estimated Full Flow</strong> and <strong>Estimated ECMO Flow</strong>.</p>
+
+      <div class="grid">
+        <div>
+          <label for="units">Units</label>
+          <select id="units" aria-label="Units">
+            <option value="metric" selected>Metric (kg, cm)</option>
+            <option value="imperial">Imperial (lb, in)</option>
+          </select>
+        </div>
+        <div>
+          <label for="ptype">Patient Type</label>
+          <select id="ptype" aria-label="Patient Type">
+            <option value="adult" selected>Adult (×2.4)</option>
+            <option value="pediatric">Pediatric (×2.8)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:6px">
+        <div>
+          <label for="weight">Weight</label>
+          <input id="weight" type="number" inputmode="decimal" placeholder="e.g., 70" min="0" step="0.1" aria-label="Weight">
+          <div class="muted" id="wUnit">kg</div>
+        </div>
+        <div>
+          <label for="height">Height</label>
+          <input id="height" type="number" inputmode="decimal" placeholder="e.g., 170" min="0" step="0.1" aria-label="Height">
+          <div class="muted" id="hUnit">cm</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label for="etype">ECMO Type</label>
+          <select id="etype" aria-label="ECMO Type">
+            <option value="va" selected>VA (×0.80)</option>
+            <option value="vv">VV (×0.66)</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+
+      <div class="row">
+        <button class="btn" id="calcBtn">Calculate</button>
+        <button class="btn secondary" id="clearBtn" title="Clear all fields">Clear</button>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div class="cols-3">
+          <div>
+            <div class="k">Mosteller BSA</div>
+            <div class="v"><span id="mostellerVal">—</span> m²</div>
+          </div>
+          <div>
+            <div class="k">Du Bois BSA</div>
+            <div class="v"><span id="duboisVal">—</span> m²</div>
+          </div>
+          <div>
+            <div class="k">BSA Used for Flow</div>
+            <div class="v"><span id="bsaUsed">—</span> m²</div>
+            <div class="muted">Using Mosteller</div>
+          </div>
+        </div>
+
+        <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
+
+        <div class="cols-3">
+          <div>
+            <div class="k">Patient Multiplier</div>
+            <div class="v"><span id="ptMult">—</span></div>
+            <div class="muted"><span id="ptLabel">—</span></div>
+          </div>
+          <div>
+            <div class="k">Estimated Full Flow</div>
+            <div class="v"><span id="fullFlow">—</span> L/min</div>
+            <div class="muted">BSA × patient multiplier</div>
+          </div>
+          <div>
+            <div class="k">ECMO Flow Factor</div>
+            <div class="v"><span id="ecmoFactor">—</span></div>
+            <div class="muted"><span id="ecmoLabel">—</span></div>
+          </div>
+        </div>
+
+        <div style="margin-top:8px">
+          <div class="k">Estimated ECMO Flow</div>
+          <div class="v" style="font-size:22px"><span id="ecmoFlow">—</span> L/min</div>
+          <div class="muted">Full flow × ECMO type factor</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>Rules: Adult full flow = BSA × 2.4; Pediatric full flow = BSA × 2.8. ECMO estimated flow: VA × 0.80, VV × 0.66.</footer>
+  </div>
+
+  <script>
+    const unitsSel = document.getElementById('units');
+    const ptypeSel = document.getElementById('ptype');
+    const etypeSel = document.getElementById('etype');
+    const wInput = document.getElementById('weight');
+    const hInput = document.getElementById('height');
+    const wUnit = document.getElementById('wUnit');
+    const hUnit = document.getElementById('hUnit');
+    const calcBtn = document.getElementById('calcBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    const resultBox = document.getElementById('result');
+    const mostellerVal = document.getElementById('mostellerVal');
+    const duboisVal = document.getElementById('duboisVal');
+    const bsaUsed = document.getElementById('bsaUsed');
+
+    const ptMult = document.getElementById('ptMult');
+    const ptLabel = document.getElementById('ptLabel');
+    const fullFlow = document.getElementById('fullFlow');
+    const ecmoFactor = document.getElementById('ecmoFactor');
+    const ecmoLabel = document.getElementById('ecmoLabel');
+    const ecmoFlow = document.getElementById('ecmoFlow');
+
+    function updateUnitLabels(){
+      if(unitsSel.value === 'metric'){ wUnit.textContent = 'kg'; hUnit.textContent = 'cm'; }
+      else { wUnit.textContent = 'lb'; hUnit.textContent = 'in'; }
+    }
+    unitsSel.addEventListener('change', updateUnitLabels);
+    updateUnitLabels();
+
+    function toMetric(weight, height, units){
+      if(units === 'metric'){ return {kg: weight, cm: height}; }
+      const kg = weight * 0.45359237; // lb -> kg
+      const cm = height * 2.54;       // in -> cm
+      return {kg, cm};
+    }
+
+    function round(val, dp=2){
+      const f = Math.pow(10, dp);
+      return Math.round((val + Number.EPSILON) * f) / f;
+    }
+
+    function calc(){
+      const w = parseFloat(wInput.value);
+      const h = parseFloat(hInput.value);
+      if(!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0){
+        alert('Please enter valid positive numbers for weight and height.');
+        return;
+      }
+
+      const {kg, cm} = toMetric(w, h, unitsSel.value);
+
+      // BSA calculations
+      const mosteller = Math.sqrt((cm * kg) / 3600);
+      const dubois = 0.007184 * Math.pow(cm, 0.725) * Math.pow(kg, 0.425);
+
+      mostellerVal.textContent = round(mosteller).toFixed(2);
+      duboisVal.textContent = round(dubois).toFixed(2);
+      bsaUsed.textContent = round(mosteller).toFixed(2); // using Mosteller for flow
+
+      // Patient multiplier
+      const isAdult = ptypeSel.value === 'adult';
+      const mult = isAdult ? 2.4 : 2.8;
+      ptMult.textContent = mult.toFixed(2);
+      ptLabel.textContent = isAdult ? 'Adult' : 'Pediatric';
+
+      // Estimated Full Flow (L/min)
+      const full = mosteller * mult;
+      fullFlow.textContent = round(full, 2).toFixed(2);
+
+      // ECMO factor
+      const isVA = etypeSel.value === 'va';
+      const factor = isVA ? 0.80 : 0.66;
+      ecmoFactor.textContent = factor.toFixed(2);
+      ecmoLabel.textContent = isVA ? 'VA ECMO' : 'VV ECMO';
+
+      // Estimated ECMO Flow
+      const eFlow = full * factor;
+      ecmoFlow.textContent = round(eFlow, 2).toFixed(2);
+
+      resultBox.hidden = false;
+    }
+
+    function clearAll(){
+      wInput.value = '';
+      hInput.value = '';
+      resultBox.hidden = true;
+    }
+
+    calcBtn.addEventListener('click', calc);
+    clearBtn.addEventListener('click', clearAll);
+
+    // Recalculate when type selectors change (if values present)
+    [ptypeSel, etypeSel, unitsSel].forEach(sel => sel.addEventListener('change', ()=>{
+      if(wInput.value && hInput.value){ calc(); }
+    }));
+
+    // Allow Enter key to calculate
+    [wInput, hInput].forEach(inp => inp.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){ calc(); }
+    }));
+  </script>
+</body>
+</html>
